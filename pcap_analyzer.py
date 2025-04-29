@@ -7,65 +7,90 @@ from collections import defaultdict
 from datetime import datetime
 import matplotlib.pyplot as plt
 
-# Use a lock for safe dictionary access
-lock = threading.Lock()
-
-connections = defaultdict(lambda: {
-    'start_timestamp': None,
-    'end_timestamp': None,
-    'sent_size': 0,
-    'received_size': 0,
-    'messages': set()
-})
-
 # Bitcoin protocol magic bytes (mainnet)
-BITCOIN_MAGIC = b'\xf9\xbe\xb4\xd9'
+BITCOIN_MAGIC = b"\xf9\xbe\xb4\xd9"
 
+
+# returns a consistent hash identifier for a TCP/IP connection (bidirectional)
+def gethash(p):
+    if not p.haslayer(IP) or not p.haslayer(TCP):
+        # fallback for non-IP/TCP
+        try:
+            return f"OTHER {p.src}_{p.dst}"
+        except Exception:
+            return None
+    ip_src, port_src = p[IP].src, p[TCP].sport
+    ip_dst, port_dst = p[IP].dst, p[TCP].dport
+    # create a canonical key sorted by (ip,port)
+    endpoint1 = (ip_src, port_src)
+    endpoint2 = (ip_dst, port_dst)
+    if endpoint1 <= endpoint2:
+        return f"{endpoint1[0]}:{endpoint1[1]}-{endpoint2[0]}:{endpoint2[1]}"
+    else:
+        return f"{endpoint2[0]}:{endpoint2[1]}-{endpoint1[0]}:{endpoint1[1]}"
+
+
+# Extract Bitcoin command name from TCP payload
 def extract_bitcoin_message_name(payload):
-    """Extract the Bitcoin protocol command name from TCP payload."""
     if payload.startswith(BITCOIN_MAGIC) and len(payload) > 24:
-        command_bytes = payload[4:16]
-        command = command_bytes.replace(b'\x00', b'').decode('ascii', errors='ignore')
-        return command
+        cmd_bytes = payload[4:16]
+        cmd = cmd_bytes.replace(b"\x00", b"").decode("ascii", errors="ignore")
+        return cmd
     return None
 
-# Worker function for each thread
+
+# Thread-safe connection storage
+lock = threading.Lock()
+connections = defaultdict(
+    lambda: {
+        "start_timestamp": None,
+        "end_timestamp": None,
+        "sent_size": 0,
+        "received_size": 0,
+        "messages": [],  # list of (direction_symbol, message)
+        "client": None,  # tuple (ip, port) of initiator
+        "server": None,  # tuple (ip, port) of responder
+    }
+)
+
+
+# Worker function for processing packet chunks
 def process_packets(packets_chunk):
     for pkt in packets_chunk:
-        if pkt.haslayer(TCP) and pkt.haslayer(IP):
-            ip_src = pkt[IP].src
-            ip_dst = pkt[IP].dst
-            port_src = pkt[TCP].sport
-            port_dst = pkt[TCP].dport
-            payload = bytes(pkt[TCP].payload)
+        if not pkt.haslayer(IP) or not pkt.haslayer(TCP):
+            continue
+        key = gethash(pkt)
+        ip_src, port_src = pkt[IP].src, pkt[TCP].sport
+        ip_dst, port_dst = pkt[IP].dst, pkt[TCP].dport
+        flags = pkt[TCP].flags
+        payload = bytes(pkt[TCP].payload)
 
-            connection_id = (ip_src, port_src, ip_dst, port_dst)
+        with lock:
+            conn = connections[key]
+            # On first SYN (without ACK), record endpoints
+            if flags == "S":
+                conn["start_timestamp"] = conn["start_timestamp"] or pkt.time
+                conn["client"] = (ip_src, port_src)
+                conn["server"] = (ip_dst, port_dst)
+            # On FIN or RST, set end timestamp
+            if flags in ("F", "R", "FA", "RA"):
+                conn["end_timestamp"] = pkt.time
+            # Determine direction: '>' if from client, '<' if from server
+            direction = None
+            if conn["client"] == (ip_src, port_src):
+                conn["sent_size"] += len(payload)
+                direction = ">"
+            else:
+                conn["received_size"] += len(payload)
+                direction = "<"
+            # Extract and record Bitcoin messages with direction prefix
+            msg = extract_bitcoin_message_name(payload)
+            if msg:
+                conn["messages"].append(f"{direction}{msg}")
 
-            # For reverse (incoming) traffic
-            reverse_connection_id = (ip_dst, port_dst, ip_src, port_src)
 
-            with lock:
-                if pkt[TCP].flags == "S":  # SYN packet
-                    connections[connection_id]['start_timestamp'] = pkt.time
-                if pkt[TCP].flags in ("R", "F", "RA", "FA"):  # RST or FIN
-                    connections[connection_id]['end_timestamp'] = pkt.time
-
-                # Update sent and received sizes
-                if (ip_src, port_src, ip_dst, port_dst) in connections:
-                    connections[(ip_src, port_src, ip_dst, port_dst)]['sent_size'] += len(payload)
-                elif (ip_dst, port_dst, ip_src, port_src) in connections:
-                    connections[(ip_dst, port_dst, ip_src, port_src)]['received_size'] += len(payload)
-
-                # Try to extract Bitcoin message names
-                message_name = extract_bitcoin_message_name(payload)
-                if message_name:
-                    if connection_id in connections:
-                        connections[connection_id]['messages'].add(message_name)
-                    elif reverse_connection_id in connections:
-                        connections[reverse_connection_id]['messages'].add(message_name)
-
+# Utility to chunk packets
 def chunk_packets(reader, chunk_size=1000):
-    """Yield chunks of packets from PcapReader."""
     chunk = []
     for pkt in reader:
         chunk.append(pkt)
@@ -75,95 +100,87 @@ def chunk_packets(reader, chunk_size=1000):
     if chunk:
         yield chunk
 
+
 # --- Main execution ---
 packets = PcapReader("legit_traffic.pcap")
-
 threads = []
-num_threads = 8  # Adjust depending on your CPU
-
-for packet_chunk in chunk_packets(packets, chunk_size=1000):
-    split_chunks = [packet_chunk[i::num_threads] for i in range(num_threads)]
-
-    for sub_chunk in split_chunks:
-        t = threading.Thread(target=process_packets, args=(sub_chunk,))
+num_threads = 8
+for packet_chunk in chunk_packets(packets, 1000):
+    for sub in [packet_chunk[i::num_threads] for i in range(num_threads)]:
+        t = threading.Thread(target=process_packets, args=(sub,))
         t.start()
         threads.append(t)
-
 for t in threads:
     t.join()
-
 packets.close()
 
-# --- CSV and analysis ---
+# --- CSV and Analysis ---
 csv_filename = "connection_times.csv"
-header = ["id", "ipsrc", "portsrc", "ipdst", "portdst", "timesyn", "timerst_or_fst", "connection_duration", "sent_size", "received_size", "messages"]
-
+header = [
+    "id",
+    "hash",
+    "start_time",
+    "end_time",
+    "duration_s",
+    "sent_size",
+    "received_size",
+    "messages",
+]
 connection_durations = []
-connection_data = []
+rows = []
+for idx, (key, info) in enumerate(connections.items(), start=1):
+    start = info["start_timestamp"]
+    end = info["end_timestamp"]
+    duration = end - start if start and end else None
+    if duration is not None:
+        connection_durations.append(duration)
+    rows.append(
+        [
+            idx,
+            key,
+            (
+                datetime.fromtimestamp(float(start)).strftime("%Y-%m-%d %H:%M:%S")
+                if start
+                else None
+            ),
+            (
+                datetime.fromtimestamp(float(end)).strftime("%Y-%m-%d %H:%M:%S")
+                if end
+                else None
+            ),
+            round(duration, 5) if duration else None,
+            info["sent_size"],
+            info["received_size"],
+            ";".join(info["messages"]),
+        ]
+    )
 
-for index, (conn_id, conn_info) in enumerate(connections.items(), start=1):
-    ipsrc, portsrc, ipdst, portdst = conn_id
-    conn_id = index
-    start_timestamp = conn_info['start_timestamp']
-    end_timestamp = conn_info['end_timestamp']
-    sent_size = conn_info['sent_size']
-    received_size = conn_info['received_size']
-    messages = sorted(conn_info['messages'])  # Sort for easier reading
+# Write CSV
+table = [header] + rows
+with open(csv_filename, "w", newline="") as f:
+    writer = csv.writer(f)
+    writer.writerows(table)
+print(f"Saved CSV to {csv_filename}")
 
-    start_time = None
-    end_time = None
-    duration = None
-    if start_timestamp:
-        start_time = datetime.fromtimestamp(float(start_timestamp)).strftime('%Y-%m-%d %H:%M:%S')
-    if end_timestamp:
-        end_time = datetime.fromtimestamp(float(end_timestamp)).strftime('%Y-%m-%d %H:%M:%S')
-    if start_timestamp and end_timestamp:
-        duration = end_timestamp - start_timestamp
-        connection_durations.append(float(duration))
+# Stats
+avg = statistics.mean(connection_durations) if connection_durations else 0
+var = statistics.variance(connection_durations) if len(connection_durations) > 1 else 0
+print(f"Average Duration: {avg:.5f}s, Variance: {var:.5f}s^2")
 
-    connection_data.append([
-        conn_id, ipsrc, portsrc, ipdst, portdst,
-        start_time, end_time,
-        duration if duration else None,
-        sent_size,
-        received_size,
-        ",".join(messages) if messages else ""
-    ])
 
-avg_duration = statistics.mean(connection_durations) if connection_durations else 0
-var_duration = statistics.variance(connection_durations) if len(connection_durations) > 1 else 0
-
-print(f"Average Connection Duration: {avg_duration:.5f} seconds")
-print(f"Variance in Duration: {var_duration:.5f} seconds^2")
-
-# Write to CSV
-with open(csv_filename, mode="w", newline="") as file:
-    writer = csv.writer(file)
-    writer.writerow(header)
-    for row in connection_data:
-        writer.writerow([
-            row[0], row[1], row[2], row[3], row[4],
-            row[5], row[6],
-            round(float(row[7]), 5) if row[7] is not None else None,
-            row[8], row[9],
-            row[10]
-        ])
-
-print(f"CSV file '{csv_filename}' has been saved.")
-
-# --- Plotting ---
+# Plot histogram
 def generate_histogram(durations):
     if durations:
         plt.figure(figsize=(10, 6))
-        plt.hist(durations, bins=1000, edgecolor='black')
-        plt.title('Histogram of Connection Durations')
-        plt.xlabel('Connection Duration (seconds)')
-        plt.ylabel('Frequency')
-        plt.xlim(0, 100)
+        plt.hist(durations, bins=100, edgecolor="black")
+        plt.title("Connection Duration Histogram")
+        plt.xlabel("Seconds")
+        plt.ylabel("Frequency")
         plt.grid(True)
         plt.savefig("plot.png")
         plt.show()
     else:
-        print("No connection duration values available to plot.")
+        print("No durations to plot.")
+
 
 generate_histogram(connection_durations)
