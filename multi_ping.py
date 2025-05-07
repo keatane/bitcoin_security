@@ -177,6 +177,22 @@ class PongMessage:
 
     def encode(self) -> bytes:
         return self.nonce
+    
+
+@dataclass
+class GetHeadersMessage:
+    command: bytes = field(init=False, default=b'getheaders')
+
+    def encode(self) -> bytes:
+        return b''
+    
+
+@dataclass
+class GetBlocksMessage:
+    command: bytes = field(init=False, default=b'getblocks')
+
+    def encode(self) -> bytes:
+        return b''
 
 
 # --- Node Class ---
@@ -238,6 +254,11 @@ class CustomNode:
                     # time.sleep(60 * 18)
                     self.send(PongMessage(envelope.payload))
                     self.last_ping_time = time.time()
+                    
+                    self.log("<-- Sending getheaders")
+                    self.send(GetHeadersMessage(envelope.payload))
+                elif command == b'inv':
+                    self.log("--> inv received")
                 time.sleep(self.wait_time)
             except Exception as e:
                 self.log(f"Error: {e}")
@@ -268,5 +289,5 @@ def start_multiple_requests(num_requests, host, net='main', verbose=1):
 # Specify the host and number of requests directly here
 if __name__ == "__main__":
     host = '10.20.80.131'  # Specify the desired host
-    num_requests = 114       # Specify the desired number of connections
+    num_requests = 1       # Specify the desired number of connections
     start_multiple_requests(num_requests=num_requests, host=host)
