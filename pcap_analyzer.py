@@ -102,7 +102,7 @@ def chunk_packets(reader, chunk_size=1000):
 
 
 # --- Main execution ---
-packets = PcapReader("legit_traffic.pcap")
+packets = PcapReader("obstacled_traffic.pcap")
 threads = []
 num_threads = 8
 for packet_chunk in chunk_packets(packets, 1000):
@@ -120,7 +120,9 @@ header = [
     "id",
     "hash",
     "start_time",
+    "start_epoch",
     "end_time",
+    "end_epoch",
     "duration_s",
     "sent_size",
     "received_size",
@@ -143,11 +145,13 @@ for idx, (key, info) in enumerate(connections.items(), start=1):
                 if start
                 else None
             ),
+            float(start) if start else None,
             (
                 datetime.fromtimestamp(float(end)).strftime("%Y-%m-%d %H:%M:%S")
                 if end
                 else None
             ),
+            float(end) if end else None,
             round(duration, 5) if duration else None,
             info["sent_size"],
             info["received_size"],
