@@ -181,10 +181,19 @@ class PongMessage:
 
 @dataclass
 class GetHeadersMessage:
+    version: int = 70015
+    locator_hashes: List[bytes] = field(default_factory=list)
+    stop_hash: bytes = b'\x00' * 32
     command: bytes = field(init=False, default=b'getheaders')
 
     def encode(self) -> bytes:
-        return b''
+        result = self.version.to_bytes(4, 'little')
+        result += encode_varint(len(self.locator_hashes))
+        for h in self.locator_hashes:
+            result += h
+        result += self.stop_hash
+        return result
+
     
 
 @dataclass
@@ -256,9 +265,12 @@ class CustomNode:
                     self.last_ping_time = time.time()
                     
                     self.log("<-- Sending getheaders")
-                    self.send(GetHeadersMessage(envelope.payload))
+                    genesis_hash = bytes.fromhex("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f")[::-1]
+                    self.send(GetHeadersMessage(locator_hashes=[genesis_hash]))
                 elif command == b'inv':
                     self.log("--> inv received")
+                elif command == b'headers':
+                    self.log("--> headers received")
                 time.sleep(self.wait_time)
             except Exception as e:
                 self.log(f"Error: {e}")
@@ -289,5 +301,5 @@ def start_multiple_requests(num_requests, host, net='main', verbose=1):
 # Specify the host and number of requests directly here
 if __name__ == "__main__":
     host = '10.20.80.131'  # Specify the desired host
-    num_requests = 1       # Specify the desired number of connections
+    num_requests = 114     # Specify the desired number of connections
     start_multiple_requests(num_requests=num_requests, host=host)
