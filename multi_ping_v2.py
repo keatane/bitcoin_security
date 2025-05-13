@@ -210,6 +210,7 @@ class CustomNode:
     verbose: int = 0
     wait_time: int = 5
     last_ping_time: float = None
+    mode: str = "long"  # "short" or "long"
 
     def __post_init__(self):
         self.reconnect()
@@ -256,29 +257,43 @@ class CustomNode:
                         self.log(f"Time since last ping: {delta:.2f} sec")
                     self.send(PongMessage(envelope.payload))
                     self.last_ping_time = time.time()
-                    # self.send(GetHeadersMessage(locator_hashes=[bytes.fromhex(
-                    #     "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f")[::-1]]))
-                    # break
+                    if self.mode == "long":
+                        self.send(
+                            GetHeadersMessage(
+                                locator_hashes=[
+                                    bytes.fromhex(
+                                        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
+                                    )[::-1]
+                                ]
+                            )
+                        )
+                elif command == b"inv":
+                    self.log("--> inv received")
+                elif command == b"headers":
+                    self.log("--> headers received")
                 time.sleep(self.wait_time)
             except Exception as e:
                 self.log(f"Error: {e}")
                 break
 
 
-def send_request_in_thread(host, net, verbose):
-    node = CustomNode(host=host, net=net, verbose=verbose)
+def send_request_in_thread(host, net, verbose, mode):
+    node = CustomNode(host=host, net=net, verbose=verbose, mode=mode)
     node.listen_message()
 
 
-def start_multiple_requests(num_requests, host, net="main", verbose=1, delay=0.1):
+def start_multiple_requests(
+    num_requests, host, net="main", verbose=1, delay=0.1, mode="long"
+):
     threads = []
     for i in range(num_requests):
         thread = threading.Thread(
-            target=send_request_in_thread, args=(host, net, verbose)
+            target=send_request_in_thread, args=(host, net, verbose, mode)
         )
         threads.append(thread)
         thread.start()
-        time.sleep(delay)
+        if delay > 0:
+            time.sleep(delay)
     for thread in threads:
         thread.join()
 
@@ -298,7 +313,7 @@ def count_established_connections(host, port=8333):
             if f"{host}:{port}" in line
             and "ESTABLISHED" in line
             and "python" not in line
-            and "192.168.3.8" not in line
+            and "192.168.3.8" not in line  # this may change based on network
         )
     except Exception as e:
         logging.error(f"Failed to count connections: {e}")
@@ -340,6 +355,7 @@ def optimize_delay(
     )
 
 
+# --- Main ---
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -352,11 +368,27 @@ if __name__ == "__main__":
         "--optimize-delay", action="store_true", help="Enable delay optimization"
     )
     parser.add_argument("--verbose", type=int, default=1, help="Enable verbose logs")
+    parser.add_argument(
+        "--delay",
+        type=float,
+        default=0.1,
+        help="Delay between connections (0 to disable) [ignored for optimize-delay]",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["short", "long"],
+        default="long",
+        help="Connection mode: short or long [ignored for optimize-delay]",
+    )
     args = parser.parse_args()
 
     if args.optimize_delay:
         optimize_delay(host=args.host, num_requests=args.num, verbose=args.verbose)
     else:
         start_multiple_requests(
-            num_requests=args.num, host=args.host, verbose=args.verbose
+            num_requests=args.num,
+            host=args.host,
+            verbose=args.verbose,
+            delay=args.delay,
+            mode=args.mode,
         )
