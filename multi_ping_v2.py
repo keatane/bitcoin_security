@@ -216,7 +216,9 @@ class CustomNode:
         self.reconnect()
 
     def log(self, message: str):
-        if self.verbose:
+        if "Error" in message:
+            logging.error(message)
+        elif self.verbose:
             logging.info(message)
 
     def reconnect(self):
@@ -367,7 +369,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--optimize-delay", action="store_true", help="Enable delay optimization"
     )
-    parser.add_argument("--verbose", type=int, default=1, help="Enable verbose logs")
+    parser.add_argument("--verbose", type=int, default=0, help="Enable verbose logs")
     parser.add_argument(
         "--delay",
         type=float,
