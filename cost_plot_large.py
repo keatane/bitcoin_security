@@ -20,7 +20,6 @@ for PN in PN_values:
     costs = [cost(T, PN, NS, NX, CB) for T in time_range]
     plt.step(time_range, costs, where='post', label=f'PN = {PN} peers')
 
-# plt.title('Total Byte Cost Over Time for Different Attacker Peer Counts')
 plt.xlabel('Time (minutes)')
 plt.ylabel('Total Cost (bytes)')
 plt.grid(True)

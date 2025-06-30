@@ -23,7 +23,6 @@ for NS in connection_values:
 # plt.title('Cost Over Time for Different Numbers of Connections')
 plt.xlabel('Time (minutes)')
 plt.ylabel('Total Cost (bytes)')
-plt.yscale('log') 
 plt.grid(True)
 plt.legend()
 plt.tight_layout()

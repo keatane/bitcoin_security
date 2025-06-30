@@ -28,12 +28,10 @@ for NS in connection_values:
     costs1 = [cost_method1(T, NS) for T in time_range]
     costs2 = [cost_method2(T, NS) for T in time_range]
     
-    # Method 1: solid line
     plt.step(time_range, costs1, where='post',
              label=f'Ping - {NS} Connections',
              color=color, linewidth=2)
 
-    # Method 2: semi-transparent, thicker line
     plt.step(time_range, costs2, where='post',
              label=f'Handshake - {NS} Connections',
              color=color, linewidth=3, alpha=0.4)
