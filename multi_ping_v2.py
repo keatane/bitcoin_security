@@ -62,7 +62,7 @@ def encode_varint(i: int) -> bytes:
 def generate_public_ipv4(n: int) -> List["NetAddrStruct"]:
     addresses = set()
     while len(addresses) < n:
-        ip = f"150.145.22.{random.randint(1, 254)}"
+        ip = f"150.145.{random.randint(1, 254)}.{random.randint(1, 254)}"
         addresses.add(ip)
     logging.debug(f"Generated IPs: {addresses}")
     return [
@@ -130,7 +130,28 @@ class AddrMessage:
         for addr in self.addresses:
             payload += timestamp.to_bytes(4, "little") + addr.encode()
         return payload
+    
 
+@dataclass
+class InventoryVector:
+    type: int  # 1 for transaction, 2 for block
+    identifier: bytes  # 32-byte hash
+
+    def encode(self) -> bytes:
+        return self.type.to_bytes(4, 'little') + self.identifier
+
+
+@dataclass
+class InvMessage:
+    inventory: List[InventoryVector]
+    command: bytes = field(init=False, default=b"inv")
+
+    def encode(self) -> bytes:
+        result = encode_varint(len(self.inventory))
+        for item in self.inventory:
+            result += item.encode()
+        return result
+    
 
 @dataclass
 class VersionMessage:
@@ -208,9 +229,10 @@ class CustomNode:
     host: str
     net: str
     verbose: int = 0
-    wait_time: int = 5
+    wait_time: int = 0.1
     last_ping_time: float = None
     mode: str = "long"  # "short" or "long"
+    fired: bool = False
 
     def __post_init__(self):
         self.reconnect()
@@ -240,6 +262,11 @@ class CustomNode:
         self.socket.sendall(envelope.encode())
 
     def listen_message(self):
+        
+        # --- To test Handshake method ---
+        # for i in range(10):
+        #     self.send(VerAckMessage())
+        # return
         self.send(VersionMessage())
         index = 1
         while True:
@@ -257,9 +284,28 @@ class CustomNode:
                     if self.last_ping_time:
                         delta = time.time() - self.last_ping_time
                         self.log(f"Time since last ping: {delta:.2f} sec")
+                        
+                    # --- To test Pong delay ---
+                    # if self.fired:
+                    #     time.sleep(18 * 60)
+                    # self.fired = True
                     self.send(PongMessage(envelope.payload))
                     self.last_ping_time = time.time()
-                    if self.mode == "long":
+
+                    # --- To test InvMessage ---
+                    # fake_block_hash = bytes.fromhex('0000000000000000000b4d0b33a7e09d7f6f3b6c6bca25d91cb6a1c6b8ce26f3')[::-1]
+                    
+                    # inv_msg = InvMessage(
+                    #     inventory=[
+                    #         InventoryVector(type=2, identifier=fake_block_hash)
+                    #     ]
+                    # )
+                    # for i in range(10):
+                    #     self.send(inv_msg)
+                    
+                    # --- To test GetHeadersMessage ---
+                    if self.mode == "long" and not self.fired:
+                        self.fired = True
                         self.send(
                             GetHeadersMessage(
                                 locator_hashes=[
@@ -269,6 +315,10 @@ class CustomNode:
                                 ]
                             )
                         )
+                    
+                    # --- To test AddrMessage ---
+                    # self.send(AddrMessage(addresses=generate_public_ipv4(10)))
+                    
                 elif command == b"inv":
                     self.log("--> inv received")
                 elif command == b"headers":
@@ -379,7 +429,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--mode",
         choices=["short", "long"],
-        default="long",
+        default="short",
         help="Connection mode: short or long [ignored for optimize-delay]",
     )
     args = parser.parse_args()

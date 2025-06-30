@@ -260,13 +260,9 @@ class CustomNode:
                     if self.last_ping_time:
                         delta = time.time() - self.last_ping_time
                         self.log(f"Time since last ping: {delta:.2f} sec")
-                    # time.sleep(60 * 18)
                     self.send(PongMessage(envelope.payload))
                     self.last_ping_time = time.time()
                     
-                    self.log("<-- Sending getheaders")
-                    genesis_hash = bytes.fromhex("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f")[::-1]
-                    self.send(GetHeadersMessage(locator_hashes=[genesis_hash]))
                 elif command == b'inv':
                     self.log("--> inv received")
                 elif command == b'headers':

@@ -22,8 +22,8 @@ def analyze_connections(csv_path):
     # Count entries in each category
     counts = [len(no_messages), len(short_duration), len(long_duration)]
     labels = [
-        "TCP Only - No Bitcoin messages exchanged",
-        "Bitcoin messages ≤ 10 min",
+        "TCP Only - No Bitcoin\nmessages exchanged",
+        "Bitcoin messages < 10 min",
         "Bitcoin messages ≥ 10 min",
     ]
 
@@ -33,7 +33,7 @@ def analyze_connections(csv_path):
         labels=labels,
         autopct="%1.1f%%",
         startangle=140,
-        textprops={"fontsize": 16},
+        textprops={"fontsize": 24},
     )
     plt.axis("equal")
     plt.savefig("connections_piechart.png", dpi=300, bbox_inches="tight")

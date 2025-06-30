@@ -1,6 +1,6 @@
 import argparse
 from netfilterqueue import NetfilterQueue
-from scapy.all import IP, send
+from scapy.all import IP
 import os
 
 # Configuration

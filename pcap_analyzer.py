@@ -1,6 +1,7 @@
 import csv
 import statistics
 import threading
+import numpy as np
 from scapy.all import *
 from scapy.layers.inet import IP, TCP
 from collections import defaultdict
@@ -210,6 +211,15 @@ print(f"Average Duration: {avg:.5f}s, Variance: {var:.5f}s^2")
 # Plot histogram
 def generate_histogram(durations):
     if durations:
+        # Calculate histogram bins and frequencies
+        counts, bin_edges = np.histogram(durations, bins=100)
+
+        # Print bin ranges and frequencies
+        print("\nHistogram Frequencies:")
+        for i in range(len(counts)):
+            print(f"{bin_edges[i]:.2f} - {bin_edges[i+1]:.2f} s: {counts[i]} connections")
+
+        # Plot histogram
         plt.figure(figsize=(10, 6))
         plt.hist(durations, bins=100, edgecolor="black")
         plt.title("Connection Duration Histogram")
