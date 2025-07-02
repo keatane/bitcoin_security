@@ -23,8 +23,10 @@ def analyze_connections(csv_path):
     counts = [len(no_messages), len(short_duration), len(long_duration)]
     labels = [
         "TCP Only - No Bitcoin\nmessages exchanged",
-        "Bitcoin messages < 10 min",
-        "Bitcoin messages ≥ 10 min",
+        "Ephemeral connections",
+        "Active connections",
+#        "Bitcoin messages < 10 min",
+#        "Bitcoin messages ≥ 10 min",
     ]
 
     plt.figure(figsize=(8, 8))

@@ -10,7 +10,14 @@ from typing import List
 from dataclasses import dataclass, field
 
 # --- Logging Setup ---
-logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(message)s")
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] %(message)s",
+    handlers=[
+        logging.FileHandler("ping.log"),
+        logging.StreamHandler()
+    ]
+)
 
 # --- Constants ---
 MAGICS = {
@@ -304,24 +311,26 @@ class CustomNode:
                     #     self.send(inv_msg)
                     
                     # --- To test GetHeadersMessage ---
-                    if self.mode == "long" and not self.fired:
-                        self.fired = True
-                        self.send(
-                            GetHeadersMessage(
-                                locator_hashes=[
-                                    bytes.fromhex(
-                                        "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
-                                    )[::-1]
-                                ]
-                            )
-                        )
+                    # if self.mode == "long" and not self.fired:
+                    #     self.fired = True
+                    #     self.send(
+                    #         GetHeadersMessage(
+                    #             locator_hashes=[
+                    #                 bytes.fromhex(
+                    #                     "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
+                    #                 )[::-1]
+                    #             ]
+                    #         )
+                    #     )
                     
                     # --- To test AddrMessage ---
                     # self.send(AddrMessage(addresses=generate_public_ipv4(10)))
                     
                 elif command == b"inv":
+                    pass
                     self.log("--> inv received")
                 elif command == b"headers":
+                    pass
                     self.log("--> headers received")
                 time.sleep(self.wait_time)
             except Exception as e:
@@ -414,12 +423,12 @@ if __name__ == "__main__":
         "--host", type=str, default="10.20.80.131", help="Target host IP"
     )
     parser.add_argument(
-        "--num", type=int, default=30, help="Number of connection attempts"
+        "--num", type=int, default=114, help="Number of connection attempts"
     )
     parser.add_argument(
         "--optimize-delay", action="store_true", help="Enable delay optimization"
     )
-    parser.add_argument("--verbose", type=int, default=0, help="Enable verbose logs")
+    parser.add_argument("--verbose", type=int, default=1, help="Enable verbose logs")
     parser.add_argument(
         "--delay",
         type=float,
